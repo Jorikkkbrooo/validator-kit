@@ -227,7 +227,7 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🔗 Links
 
-- Website: https://decloud.network
+- Website: https://clouddepin.com/
 - Documentation: https://clouddepin.com/docs
 - Twitter: https://x.com/CloudDepin
 
