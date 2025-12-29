@@ -98,7 +98,7 @@ class Config:
         
         # Auto-detect IDL path if not set
         if not self.idl_path:
-            self.idl_path = self._find_idl()
+            self.idl_path = self._find_idl().replace("\\", "/")
         else:
             self.idl_path = os.path.expanduser(self.idl_path)
     
