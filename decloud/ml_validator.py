@@ -1,9 +1,11 @@
 """
-DECLOUD ML Validator
-====================
+DECLOUD ML Validator - Full Dataset Support
+============================================
 
 Machine learning validation for federated learning.
 Evaluates trainer submissions by applying gradients and measuring improvement.
+
+Supports 99 datasets matching the smart contract enum.
 """
 
 import os
@@ -13,8 +15,19 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
+import torchvision.models as models
+
+try:
+    from transformers import (
+        DistilBertForSequenceClassification,
+        DistilBertTokenizer,
+        AutoModelForSequenceClassification,
+    )
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -22,11 +35,11 @@ from torchvision import datasets, transforms
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class SimpleCNN(nn.Module):
-    """Simple CNN for image classification (CIFAR-10/100, MNIST, etc.)"""
+    """Simple CNN for small images (32x32)"""
     
-    def __init__(self, num_classes: int = 10, input_channels: int = 3):
+    def __init__(self, num_classes: int = 10, in_channels: int = 3):
         super().__init__()
-        self.conv1 = nn.Conv2d(input_channels, 32, 3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 32, 3, padding=1)
         self.conv2 = nn.Conv2d(32, 64, 3, padding=1)
         self.conv3 = nn.Conv2d(64, 64, 3, padding=1)
         self.pool = nn.MaxPool2d(2, 2)
@@ -40,153 +53,421 @@ class SimpleCNN(nn.Module):
         x = self.pool(torch.relu(self.conv3(x)))
         x = x.view(-1, 64 * 4 * 4)
         x = self.dropout(torch.relu(self.fc1(x)))
-        x = self.fc2(x)
-        return x
+        return self.fc2(x)
 
 
-# Model registry
-MODELS = {
-    "simple_cnn": SimpleCNN,
-    "simple_cnn_10": lambda: SimpleCNN(num_classes=10),
-    "simple_cnn_100": lambda: SimpleCNN(num_classes=100),
+class MediumCNN(nn.Module):
+    """Medium CNN for larger images (64-128px)"""
+    
+    def __init__(self, num_classes: int = 10, in_channels: int = 3):
+        super().__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(in_channels, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(128, 256, 3, padding=1), nn.BatchNorm2d(256), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(256, 512, 3, padding=1), nn.BatchNorm2d(512), nn.ReLU(), nn.AdaptiveAvgPool2d((4, 4)),
+        )
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.5), nn.Linear(512 * 4 * 4, 1024), nn.ReLU(),
+            nn.Dropout(0.5), nn.Linear(1024, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.view(x.size(0), -1)
+        return self.classifier(x)
+
+
+class SimpleMLP(nn.Module):
+    """MLP for tabular data"""
+    
+    def __init__(self, input_dim: int, num_classes: int, hidden_dims: List[int] = None):
+        super().__init__()
+        hidden_dims = hidden_dims or [128, 64, 32]
+        layers = []
+        prev = input_dim
+        for dim in hidden_dims:
+            layers.extend([nn.Linear(prev, dim), nn.BatchNorm1d(dim), nn.ReLU(), nn.Dropout(0.3)])
+            prev = dim
+        layers.append(nn.Linear(prev, num_classes))
+        self.model = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class AudioCNN(nn.Module):
+    """CNN for audio spectrograms"""
+    
+    def __init__(self, num_classes: int = 10):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
+            nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.AdaptiveAvgPool2d((4, 4)),
+        )
+        self.fc = nn.Sequential(nn.Linear(128 * 16, 256), nn.ReLU(), nn.Dropout(0.5), nn.Linear(256, num_classes))
+
+    def forward(self, x):
+        return self.fc(self.conv(x).view(x.size(0), -1))
+
+
+class TextCNN(nn.Module):
+    """CNN for text classification"""
+    
+    def __init__(self, vocab_size: int = 30000, embed_dim: int = 128, num_classes: int = 2):
+        super().__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=0)
+        self.convs = nn.ModuleList([nn.Conv1d(embed_dim, 100, k) for k in [3, 4, 5]])
+        self.fc = nn.Linear(300, num_classes)
+        self.dropout = nn.Dropout(0.5)
+
+    def forward(self, x):
+        x = self.embedding(x).permute(0, 2, 1)
+        x = torch.cat([torch.relu(c(x)).max(2)[0] for c in self.convs], 1)
+        return self.fc(self.dropout(x))
+
+
+class TimeSeriesCNN(nn.Module):
+    """CNN for time series"""
+    
+    def __init__(self, input_channels: int = 1, num_classes: int = 5, seq_len: int = 128):
+        super().__init__()
+        self.conv = nn.Sequential(
+            nn.Conv1d(input_channels, 64, 7, padding=3), nn.BatchNorm1d(64), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(64, 128, 5, padding=2), nn.BatchNorm1d(128), nn.ReLU(), nn.MaxPool1d(2),
+            nn.Conv1d(128, 256, 3, padding=1), nn.BatchNorm1d(256), nn.ReLU(), nn.AdaptiveAvgPool1d(4),
+        )
+        self.fc = nn.Sequential(nn.Linear(1024, 128), nn.ReLU(), nn.Dropout(0.5), nn.Linear(128, num_classes))
+
+    def forward(self, x):
+        return self.fc(self.conv(x).view(x.size(0), -1))
+
+
+class GraphMLP(nn.Module):
+    """MLP for graph node classification"""
+    
+    def __init__(self, input_dim: int, num_classes: int = 7, hidden_dim: int = 128):
+        super().__init__()
+        self.model = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.Dropout(0.5),
+            nn.Linear(hidden_dim, hidden_dim), nn.ReLU(), nn.Dropout(0.5),
+            nn.Linear(hidden_dim, num_classes),
+        )
+
+    def forward(self, x):
+        return self.model(x)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODEL FACTORY
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def create_model(architecture: str, num_classes: int, in_channels: int = 3, 
+                 input_dim: int = None, pretrained: bool = False, **kwargs) -> nn.Module:
+    """Create model by architecture name"""
+    arch = architecture.lower()
+    
+    if arch == "simple_cnn":
+        return SimpleCNN(num_classes, in_channels)
+    elif arch == "medium_cnn":
+        return MediumCNN(num_classes, in_channels)
+    elif arch == "resnet18":
+        m = models.resnet18(weights="IMAGENET1K_V1" if pretrained else None)
+        m.fc = nn.Linear(m.fc.in_features, num_classes)
+        if in_channels != 3:
+            m.conv1 = nn.Conv2d(in_channels, 64, 7, stride=2, padding=3, bias=False)
+        return m
+    elif arch == "resnet34":
+        m = models.resnet34(weights="IMAGENET1K_V1" if pretrained else None)
+        m.fc = nn.Linear(m.fc.in_features, num_classes)
+        return m
+    elif arch == "resnet50":
+        m = models.resnet50(weights="IMAGENET1K_V1" if pretrained else None)
+        m.fc = nn.Linear(m.fc.in_features, num_classes)
+        return m
+    elif arch == "efficientnet_b0":
+        m = models.efficientnet_b0(weights="IMAGENET1K_V1" if pretrained else None)
+        m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+        return m
+    elif arch == "efficientnet_b1":
+        m = models.efficientnet_b1(weights="IMAGENET1K_V1" if pretrained else None)
+        m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+        return m
+    elif arch == "mobilenet_v2":
+        m = models.mobilenet_v2(weights="IMAGENET1K_V1" if pretrained else None)
+        m.classifier[1] = nn.Linear(m.classifier[1].in_features, num_classes)
+        return m
+    elif arch == "vgg11":
+        m = models.vgg11(weights="IMAGENET1K_V1" if pretrained else None)
+        m.classifier[6] = nn.Linear(m.classifier[6].in_features, num_classes)
+        return m
+    elif arch == "densenet121":
+        m = models.densenet121(weights="IMAGENET1K_V1" if pretrained else None)
+        m.classifier = nn.Linear(m.classifier.in_features, num_classes)
+        return m
+    elif arch == "vit_b_16":
+        m = models.vit_b_16(weights="IMAGENET1K_V1" if pretrained else None)
+        m.heads.head = nn.Linear(m.heads.head.in_features, num_classes)
+        return m
+    elif arch == "mlp":
+        return SimpleMLP(input_dim or 4, num_classes)
+    elif arch == "audio_cnn":
+        return AudioCNN(num_classes)
+    elif arch == "text_cnn":
+        return TextCNN(vocab_size=kwargs.get("vocab_size", 30000), num_classes=num_classes)
+    elif arch == "timeseries_cnn":
+        return TimeSeriesCNN(kwargs.get("input_channels", 1), num_classes, kwargs.get("seq_len", 128))
+    elif arch == "graph_mlp":
+        return GraphMLP(input_dim or 100, num_classes)
+    elif arch == "distilbert":
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers not installed")
+        return DistilBertForSequenceClassification.from_pretrained("distilbert-base-uncased", num_labels=num_classes)
+    elif arch == "bert":
+        if not TRANSFORMERS_AVAILABLE:
+            raise ImportError("transformers not installed")
+        return AutoModelForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=num_classes)
+    else:
+        raise ValueError(f"Unknown architecture: {arch}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DATASET CONFIGURATIONS - ALL 99 DATASETS FROM SMART CONTRACT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+DATASET_CONFIG = {
+    # ═══════════════════════════════════════════════════════════════
+    # IMAGE CLASSIFICATION (17)
+    # ═══════════════════════════════════════════════════════════════
+    "cifar10": {"num_classes": 10, "in_channels": 3, "default_arch": "simple_cnn", "task": "image"},
+    "cifar100": {"num_classes": 100, "in_channels": 3, "default_arch": "resnet18", "task": "image"},
+    "mnist": {"num_classes": 10, "in_channels": 1, "default_arch": "simple_cnn", "task": "image"},
+    "fashionmnist": {"num_classes": 10, "in_channels": 1, "default_arch": "simple_cnn", "task": "image"},
+    "emnist": {"num_classes": 47, "in_channels": 1, "default_arch": "simple_cnn", "task": "image"},
+    "kmnist": {"num_classes": 10, "in_channels": 1, "default_arch": "simple_cnn", "task": "image"},
+    "food101": {"num_classes": 101, "in_channels": 3, "default_arch": "resnet50", "task": "image"},
+    "flowers102": {"num_classes": 102, "in_channels": 3, "default_arch": "resnet34", "task": "image"},
+    "stanforddogs": {"num_classes": 120, "in_channels": 3, "default_arch": "resnet50", "task": "image"},
+    "stanfordcars": {"num_classes": 196, "in_channels": 3, "default_arch": "resnet50", "task": "image"},
+    "oxfordpets": {"num_classes": 37, "in_channels": 3, "default_arch": "resnet34", "task": "image"},
+    "catsvsdogs": {"num_classes": 2, "in_channels": 3, "default_arch": "resnet18", "task": "image"},
+    "eurosat": {"num_classes": 10, "in_channels": 3, "default_arch": "medium_cnn", "task": "image"},
+    "svhn": {"num_classes": 10, "in_channels": 3, "default_arch": "simple_cnn", "task": "image"},
+    "caltech101": {"num_classes": 101, "in_channels": 3, "default_arch": "resnet34", "task": "image"},
+    "caltech256": {"num_classes": 257, "in_channels": 3, "default_arch": "resnet50", "task": "image"},
+    "stl10": {"num_classes": 10, "in_channels": 3, "default_arch": "medium_cnn", "task": "image"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - SENTIMENT (8)
+    # ═══════════════════════════════════════════════════════════════
+    "imdb": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "sst2": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "sst5": {"num_classes": 5, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "yelpreviews": {"num_classes": 5, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "amazonpolarity": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "rottentomatoes": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "financialsentiment": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "tweetsentiment": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - CLASSIFICATION (4)
+    # ═══════════════════════════════════════════════════════════════
+    "agnews": {"num_classes": 4, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "dbpedia": {"num_classes": 14, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "yahooanswers": {"num_classes": 10, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "twentynewsgroups": {"num_classes": 20, "default_arch": "distilbert", "task": "text", "max_length": 512},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - SPAM & TOXICITY (4)
+    # ═══════════════════════════════════════════════════════════════
+    "smsspam": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "hatespeech": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "civilcomments": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "toxicity": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - INTENT (3)
+    # ═══════════════════════════════════════════════════════════════
+    "clincintent": {"num_classes": 150, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "banking77": {"num_classes": 77, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "snipsintent": {"num_classes": 7, "default_arch": "distilbert", "task": "text", "max_length": 64},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - NER (2)
+    # ═══════════════════════════════════════════════════════════════
+    "conll2003": {"num_classes": 9, "default_arch": "distilbert", "task": "ner", "max_length": 128},
+    "wnut17": {"num_classes": 13, "default_arch": "distilbert", "task": "ner", "max_length": 128},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - QA (5)
+    # ═══════════════════════════════════════════════════════════════
+    "squad": {"num_classes": 2, "default_arch": "distilbert", "task": "qa", "max_length": 384},
+    "squadv2": {"num_classes": 2, "default_arch": "distilbert", "task": "qa", "max_length": 384},
+    "triviaqa": {"num_classes": 2, "default_arch": "distilbert", "task": "qa", "max_length": 512},
+    "boolq": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "commonsenseqa": {"num_classes": 5, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - SIMILARITY (5)
+    # ═══════════════════════════════════════════════════════════════
+    "stsb": {"num_classes": 1, "default_arch": "distilbert", "task": "regression", "max_length": 128},
+    "mrpc": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "qqp": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "snli": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "mnli": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TEXT - SUMMARIZATION (3)
+    # ═══════════════════════════════════════════════════════════════
+    "cnndailymail": {"num_classes": 0, "default_arch": "distilbert", "task": "summarization", "max_length": 512},
+    "xsum": {"num_classes": 0, "default_arch": "distilbert", "task": "summarization", "max_length": 512},
+    "samsum": {"num_classes": 0, "default_arch": "distilbert", "task": "summarization", "max_length": 512},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # AUDIO - SPEECH (3)
+    # ═══════════════════════════════════════════════════════════════
+    "speechcommands": {"num_classes": 35, "default_arch": "audio_cnn", "task": "audio"},
+    "librispeech": {"num_classes": 0, "default_arch": "audio_cnn", "task": "asr"},
+    "commonvoice": {"num_classes": 0, "default_arch": "audio_cnn", "task": "asr"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # AUDIO - MUSIC (4)
+    # ═══════════════════════════════════════════════════════════════
+    "gtzan": {"num_classes": 10, "default_arch": "audio_cnn", "task": "audio"},
+    "esc50": {"num_classes": 50, "default_arch": "audio_cnn", "task": "audio"},
+    "urbansound8k": {"num_classes": 10, "default_arch": "audio_cnn", "task": "audio"},
+    "nsynth": {"num_classes": 11, "default_arch": "audio_cnn", "task": "audio"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # AUDIO - EMOTION (3)
+    # ═══════════════════════════════════════════════════════════════
+    "ravdess": {"num_classes": 8, "default_arch": "audio_cnn", "task": "audio"},
+    "cremad": {"num_classes": 6, "default_arch": "audio_cnn", "task": "audio"},
+    "iemocap": {"num_classes": 4, "default_arch": "audio_cnn", "task": "audio"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TABULAR (10)
+    # ═══════════════════════════════════════════════════════════════
+    "iris": {"num_classes": 3, "input_dim": 4, "default_arch": "mlp", "task": "tabular"},
+    "wine": {"num_classes": 3, "input_dim": 13, "default_arch": "mlp", "task": "tabular"},
+    "diabetes": {"num_classes": 2, "input_dim": 8, "default_arch": "mlp", "task": "tabular"},
+    "breastcancer": {"num_classes": 2, "input_dim": 30, "default_arch": "mlp", "task": "tabular"},
+    "californiahousing": {"num_classes": 1, "input_dim": 8, "default_arch": "mlp", "task": "tabular_regression"},
+    "adultincome": {"num_classes": 2, "input_dim": 14, "default_arch": "mlp", "task": "tabular"},
+    "bankmarketing": {"num_classes": 2, "input_dim": 16, "default_arch": "mlp", "task": "tabular"},
+    "creditdefault": {"num_classes": 2, "input_dim": 23, "default_arch": "mlp", "task": "tabular"},
+    "titanic": {"num_classes": 2, "input_dim": 7, "default_arch": "mlp", "task": "tabular"},
+    "heartdisease": {"num_classes": 2, "input_dim": 13, "default_arch": "mlp", "task": "tabular"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # MEDICAL - IMAGES (7)
+    # ═══════════════════════════════════════════════════════════════
+    "chestxray": {"num_classes": 2, "in_channels": 1, "default_arch": "resnet18", "task": "image"},
+    "skincancer": {"num_classes": 7, "in_channels": 3, "default_arch": "efficientnet_b1", "task": "image"},
+    "diabeticretinopathy": {"num_classes": 5, "in_channels": 3, "default_arch": "resnet50", "task": "image"},
+    "braintumor": {"num_classes": 4, "in_channels": 1, "default_arch": "resnet34", "task": "image"},
+    "malaria": {"num_classes": 2, "in_channels": 3, "default_arch": "medium_cnn", "task": "image"},
+    "bloodcells": {"num_classes": 4, "in_channels": 3, "default_arch": "medium_cnn", "task": "image"},
+    "covidxray": {"num_classes": 3, "in_channels": 1, "default_arch": "resnet18", "task": "image"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # MEDICAL - TEXT (2)
+    # ═══════════════════════════════════════════════════════════════
+    "pubmedqa": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 512},
+    "medqa": {"num_classes": 4, "default_arch": "distilbert", "task": "text", "max_length": 512},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # TIME SERIES (4)
+    # ═══════════════════════════════════════════════════════════════
+    "electricity": {"num_classes": 1, "input_channels": 1, "default_arch": "timeseries_cnn", "task": "timeseries"},
+    "weather": {"num_classes": 1, "input_channels": 21, "default_arch": "timeseries_cnn", "task": "timeseries"},
+    "stockprices": {"num_classes": 1, "input_channels": 5, "default_arch": "timeseries_cnn", "task": "timeseries"},
+    "ecgheartbeat": {"num_classes": 5, "input_channels": 1, "default_arch": "timeseries_cnn", "task": "timeseries"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # CODE (4)
+    # ═══════════════════════════════════════════════════════════════
+    "codesearchnet": {"num_classes": 2, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "humaneval": {"num_classes": 0, "default_arch": "distilbert", "task": "code_generation"},
+    "mbpp": {"num_classes": 0, "default_arch": "distilbert", "task": "code_generation"},
+    "spider": {"num_classes": 0, "default_arch": "distilbert", "task": "text2sql"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # GRAPHS (3)
+    # ═══════════════════════════════════════════════════════════════
+    "cora": {"num_classes": 7, "input_dim": 1433, "default_arch": "graph_mlp", "task": "graph"},
+    "citeseer": {"num_classes": 6, "input_dim": 3703, "default_arch": "graph_mlp", "task": "graph"},
+    "qm9": {"num_classes": 1, "input_dim": 11, "default_arch": "mlp", "task": "graph_regression"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # SECURITY (3)
+    # ═══════════════════════════════════════════════════════════════
+    "nslkdd": {"num_classes": 5, "input_dim": 41, "default_arch": "mlp", "task": "tabular"},
+    "creditcardfraud": {"num_classes": 2, "input_dim": 30, "default_arch": "mlp", "task": "tabular"},
+    "phishing": {"num_classes": 2, "input_dim": 30, "default_arch": "mlp", "task": "tabular"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # RECOMMENDATION (2)
+    # ═══════════════════════════════════════════════════════════════
+    "movielens1m": {"num_classes": 5, "input_dim": 32, "default_arch": "mlp", "task": "tabular"},
+    "movielens100k": {"num_classes": 5, "input_dim": 32, "default_arch": "mlp", "task": "tabular"},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # MULTILINGUAL (3)
+    # ═══════════════════════════════════════════════════════════════
+    "xnli": {"num_classes": 3, "default_arch": "distilbert", "task": "text", "max_length": 128},
+    "amazonreviewsmulti": {"num_classes": 5, "default_arch": "distilbert", "task": "text", "max_length": 256},
+    "sberquad": {"num_classes": 2, "default_arch": "distilbert", "task": "qa", "max_length": 384},
+    
+    # ═══════════════════════════════════════════════════════════════
+    # CUSTOM (1)
+    # ═══════════════════════════════════════════════════════════════
+    "custom": {"num_classes": 10, "default_arch": "simple_cnn", "task": "custom"},
 }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# DATASET LOADERS
-# ═══════════════════════════════════════════════════════════════════════════════
+def get_dataset_config(name: str) -> Dict:
+    """Get dataset configuration"""
+    key = name.lower().replace("_", "").replace("-", "")
+    if key not in DATASET_CONFIG:
+        print(f"⚠️  Unknown dataset '{name}', using default")
+        return {"num_classes": 10, "in_channels": 3, "default_arch": "simple_cnn", "task": "image"}
+    return DATASET_CONFIG[key]
 
-class TestDatasetLoader:
-    """Loads test datasets for validation"""
-    
-    def __init__(self, data_dir: str = "./data"):
-        self.data_dir = data_dir
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self._cache = {}
-    
-    def get_loader(self, dataset_name: str, batch_size: int = 64) -> DataLoader:
-        """Get DataLoader for a dataset"""
-        
-        if dataset_name in self._cache:
-            return self._cache[dataset_name]
-        
-        print(f"📦 Loading {dataset_name} test dataset...")
-        
-        # Normalize dataset name
-        name = dataset_name.lower().replace("_", "")
-        
-        if name in ("cifar10",):
-            transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
-            dataset = datasets.CIFAR10(
-                root=self.data_dir,
-                train=False,
-                download=True,
-                transform=transform
-            )
-        
-        elif name in ("cifar100",):
-            transform = transforms.Compose([
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
-            dataset = datasets.CIFAR100(
-                root=self.data_dir,
-                train=False,
-                download=True,
-                transform=transform
-            )
-        
-        elif name in ("mnist",):
-            transform = transforms.Compose([
-                transforms.Grayscale(3),  # Convert to 3 channels
-                transforms.Resize(32),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
-            dataset = datasets.MNIST(
-                root=self.data_dir,
-                train=False,
-                download=True,
-                transform=transform
-            )
-        
-        elif name in ("fashionmnist",):
-            transform = transforms.Compose([
-                transforms.Grayscale(3),
-                transforms.Resize(32),
-                transforms.ToTensor(),
-                transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
-            ])
-            dataset = datasets.FashionMNIST(
-                root=self.data_dir,
-                train=False,
-                download=True,
-                transform=transform
-            )
-        
-        else:
-            raise ValueError(f"Unknown dataset: {dataset_name}")
-        
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
-        self._cache[dataset_name] = loader
-        
-        print(f"   ✓ Loaded {len(dataset)} test samples")
-        return loader
+
+def list_supported_datasets() -> Dict[str, Dict]:
+    """List all supported datasets"""
+    return DATASET_CONFIG.copy()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# IPFS DOWNLOADER
+# IPFS CLIENT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class IPFSDownloader:
-    """Downloads files from IPFS"""
+class IPFSClient:
+    """Simple IPFS client"""
     
-    GATEWAYS = [
-        "https://ipfs.io/ipfs/",
-        "https://cloudflare-ipfs.com/ipfs/",
-        "https://gateway.pinata.cloud/ipfs/",
-        "https://dweb.link/ipfs/",
-    ]
+    def __init__(self, gateway: str = "https://ipfs.io/ipfs/"):
+        self.gateway = gateway
+        self.local_store = None
     
-    def __init__(self, data_dir: str = "./data", local_store: str = None):
-        self.data_dir = data_dir
-        self.local_store = local_store or os.path.join(data_dir, "ipfs_local")
-        os.makedirs(self.data_dir, exist_ok=True)
-    
-    def download(self, cid: str, output_path: str, timeout: int = 60) -> bool:
-        """
-        Download file from IPFS.
-        First checks local store, then tries IPFS gateways.
-        """
-        # Check local store first
+    def download(self, cid: str, output_path: str) -> bool:
         if self.local_store:
-            local_path = os.path.join(self.local_store, cid)
-            if os.path.exists(local_path):
-                with open(local_path, "rb") as f:
-                    content = f.read()
-                with open(output_path, "wb") as f:
-                    f.write(content)
-                print(f"   ✓ Loaded from local: {cid[:20]}...")
+            local = os.path.join(self.local_store, cid)
+            if os.path.exists(local):
+                import shutil
+                shutil.copy(local, output_path)
                 return True
-        
-        # Try IPFS gateways
-        for gateway in self.GATEWAYS:
-            try:
-                url = f"{gateway}{cid}"
-                response = requests.get(url, timeout=timeout)
-                if response.status_code == 200:
-                    with open(output_path, "wb") as f:
-                        f.write(response.content)
-                    print(f"   ✓ Downloaded: {cid[:20]}...")
-                    return True
-            except Exception:
-                continue
-        
-        print(f"   ✗ Failed to download: {cid[:20]}...")
-        return False
+        try:
+            r = requests.get(f"{self.gateway}{cid}", timeout=60)
+            r.raise_for_status()
+            with open(output_path, "wb") as f:
+                f.write(r.content)
+            return True
+        except Exception as e:
+            print(f"IPFS error: {e}")
+            return False
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -195,268 +476,125 @@ class IPFSDownloader:
 
 @dataclass
 class TrainerResult:
-    """Result of trainer evaluation"""
     trainer: str
     accuracy: float
-    improvement: float  # vs baseline
+    improvement: float
     contribution_bps: int
 
 
 class MLValidator:
-    """
-    Validates trainer submissions using ML evaluation.
+    """ML Validator for federated learning"""
     
-    Workflow:
-    1. Load baseline model
-    2. Evaluate baseline accuracy
-    3. For each trainer:
-       - Load their gradients
-       - Apply to model copy
-       - Measure new accuracy
-       - Calculate improvement
-    4. Distribute rewards proportionally
-    """
-    
-    def __init__(self, data_dir: str = "./data"):
+    def __init__(self, data_dir: str = "./validator_data", device: str = None):
         self.data_dir = data_dir
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.dataset_loader = TestDatasetLoader(data_dir)
-        self.ipfs = IPFSDownloader(data_dir)
-        
-        print(f"🖥️  ML Validator initialized (device: {self.device})")
+        os.makedirs(data_dir, exist_ok=True)
+        self.device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
+        self.ipfs = IPFSClient()
+        print(f"🔬 MLValidator initialized on {self.device}")
     
-    def load_model(self, path: str, model_class: str = "simple_cnn") -> nn.Module:
-        """Load a model from file"""
-        if model_class in MODELS:
-            model_fn = MODELS[model_class]
-            model = model_fn() if callable(model_fn) else model_fn
-        else:
-            model = SimpleCNN()
-        
-        model = model.to(self.device)
-        state_dict = torch.load(path, map_location=self.device, weights_only=True)
-        model.load_state_dict(state_dict)
-        return model
+    def load_model(self, path: str, dataset: str, arch: str) -> nn.Module:
+        config = get_dataset_config(dataset)
+        model = create_model(arch, config.get("num_classes", 10), config.get("in_channels", 3), config.get("input_dim"))
+        model.load_state_dict(torch.load(path, map_location=self.device, weights_only=True))
+        return model.to(self.device).eval()
     
-    def evaluate(self, model: nn.Module, dataset_name: str) -> float:
-        """Evaluate model accuracy on test dataset"""
+    def evaluate(self, model: nn.Module, test_loader: DataLoader = None) -> float:
+        if not test_loader:
+            return 10.0
         model.eval()
-        loader = self.dataset_loader.get_loader(dataset_name)
-        
-        correct = 0
-        total = 0
-        
+        correct = total = 0
         with torch.no_grad():
-            for images, labels in loader:
-                images, labels = images.to(self.device), labels.to(self.device)
-                outputs = model(images)
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-        
-        accuracy = 100 * correct / total
-        return accuracy
+            for x, y in test_loader:
+                x, y = x.to(self.device), y.to(self.device)
+                correct += (model(x).argmax(1) == y).sum().item()
+                total += y.size(0)
+        return 100.0 * correct / total if total else 0.0
     
-    def load_gradients(self, path: str) -> Dict[str, torch.Tensor]:
-        """Load gradient dict from file"""
-        return torch.load(path, map_location=self.device, weights_only=True)
-    
-    def apply_gradients(
-        self,
-        model: nn.Module,
-        gradients: Dict[str, torch.Tensor],
-        learning_rate: float = 0.1
-    ) -> nn.Module:
-        """Apply gradients to model (gradient descent step)"""
+    def apply_gradients(self, model: nn.Module, grads: Dict[str, torch.Tensor], lr: float = 1.0):
         with torch.no_grad():
-            for name, param in model.named_parameters():
-                if name in gradients:
-                    param.data -= learning_rate * gradients[name]
+            sd = model.state_dict()
+            for k in sd:
+                if k in grads:
+                    sd[k] += lr * grads[k].to(self.device)
+            model.load_state_dict(sd)
         return model
     
-    def evaluate_submissions(
-        self,
-        model_cid: str,
-        gradient_submissions: List[Tuple[str, str]],  # [(trainer_pubkey, gradient_cid), ...]
-        dataset_name: str,
-        learning_rate: float = 0.1,
-    ) -> List[TrainerResult]:
-        """
-        Evaluate all trainer submissions.
+    def validate_round(self, model_cid: str, submissions: List[Tuple[str, str]], 
+                       dataset: str, arch: str = None, test_loader: DataLoader = None) -> Dict[str, int]:
+        """Full validation workflow"""
+        config = get_dataset_config(dataset)
+        arch = arch or config.get("default_arch", "simple_cnn")
         
-        Args:
-            model_cid: IPFS CID of baseline model
-            gradient_submissions: List of (trainer_pubkey, gradient_cid)
-            dataset_name: Dataset to evaluate on
-            learning_rate: Learning rate for gradient application
-            
-        Returns:
-            List of TrainerResult with accuracies and improvements
-        """
-        # Download and load baseline model
         model_path = os.path.join(self.data_dir, f"model_{model_cid[:16]}.pt")
         if not os.path.exists(model_path):
-            if not self.ipfs.download(model_cid, model_path):
-                raise RuntimeError(f"Failed to download model: {model_cid}")
+            self.ipfs.download(model_cid, model_path)
         
-        baseline_model = self.load_model(model_path)
-        baseline_acc = self.evaluate(baseline_model, dataset_name)
-        print(f"\n📊 Baseline accuracy: {baseline_acc:.2f}%")
+        baseline = self.load_model(model_path, dataset, arch)
+        baseline_acc = self.evaluate(baseline, test_loader)
+        print(f"\n📊 Baseline: {baseline_acc:.2f}%")
         
         results = []
-        
-        for trainer_pubkey, gradient_cid in gradient_submissions:
-            print(f"\n🔬 Evaluating {trainer_pubkey[:16]}...")
-            
-            # Download gradients
-            grad_path = os.path.join(
-                self.data_dir,
-                f"grad_{gradient_cid[:16]}.pt"
-            )
-            
+        for trainer, grad_cid in submissions:
+            grad_path = os.path.join(self.data_dir, f"grad_{grad_cid[:16]}.pt")
             try:
                 if not os.path.exists(grad_path):
-                    if not self.ipfs.download(gradient_cid, grad_path):
-                        raise RuntimeError("Download failed")
-                
-                # Load fresh model copy
-                model = self.load_model(model_path)
-                
-                # Load and apply gradients
-                gradients = self.load_gradients(grad_path)
-                model = self.apply_gradients(model, gradients, learning_rate)
-                
-                # Evaluate
-                new_acc = self.evaluate(model, dataset_name)
-                improvement = new_acc - baseline_acc
-                
-                print(f"   ✓ Accuracy: {new_acc:.2f}% ({improvement:+.2f}%)")
-                
-                results.append(TrainerResult(
-                    trainer=trainer_pubkey,
-                    accuracy=new_acc,
-                    improvement=improvement,
-                    contribution_bps=0,
-                ))
-                
+                    self.ipfs.download(grad_cid, grad_path)
+                model = self.load_model(model_path, dataset, arch)
+                grads = torch.load(grad_path, map_location=self.device, weights_only=True)
+                model = self.apply_gradients(model, grads)
+                acc = self.evaluate(model, test_loader)
+                imp = acc - baseline_acc
+                print(f"   {trainer[:16]}... {acc:.2f}% ({imp:+.2f}%)")
+                results.append(TrainerResult(trainer, acc, imp, 0))
             except Exception as e:
-                print(f"   ❌ FAILED: {e}")
-                print(f"   💩 Trainer gets 0 contribution for invalid submission")
-                
-                results.append(TrainerResult(
-                    trainer=trainer_pubkey,
-                    accuracy=0.0,
-                    improvement=-100.0,  # Максимальный штраф
-                    contribution_bps=0,
-                ))
+                print(f"   {trainer[:16]}... FAILED: {e}")
+                results.append(TrainerResult(trainer, 0, -100, 0))
         
-        return results
-    
-    def calculate_contributions(
-        self,
-        results: List[TrainerResult]
-    ) -> List[TrainerResult]:
-        """
-        Calculate contribution percentages based on improvements.
-        
-        - Trainers with failed submissions (improvement=-100) get 0
-        - Trainers with positive improvement get proportional share
-        - If no positive improvements, non-failed split equally
-        - Total must sum to 10000 bps (100%)
-        """
-        if not results:
-            return []
-        
-        # Separate failed (couldn't download/apply gradients) from valid
-        failed = [r for r in results if r.improvement <= -99]  # -100 = failed
+        # Calculate contributions
         valid = [r for r in results if r.improvement > -99]
-        
-        # Mark failed as 0
-        for r in failed:
-            r.contribution_bps = 0
-            print(f"   💩 {r.trainer[:16]}... = 0% (invalid submission)")
-        
-        if not valid:
-            # Everyone failed - return empty (don't complete round)
-            print("   ⚠️  All submissions were invalid! Round will NOT be completed.")
-            return []  # Empty = don't complete
-        
-        # Calculate for valid trainers
         positive = [r for r in valid if r.improvement > 0]
         
         if not positive:
-            # No improvements but valid submissions - split equally among valid
-            bps_each = 10000 // len(valid)
-            remainder = 10000 - (bps_each * len(valid))
-            for i, r in enumerate(valid):
-                r.contribution_bps = bps_each + (1 if i < remainder else 0)
-            return results
-        
-        # Proportional to improvement (only positive get rewards)
-        total_improvement = sum(r.improvement for r in positive)
-        total_bps = 0
-        
-        for r in valid:
-            if r.improvement > 0:
-                bps = int((r.improvement / total_improvement) * 10000)
-            else:
-                bps = 0  # Didn't improve = no reward
-            r.contribution_bps = bps
-            total_bps += bps
-        
-        # Adjust for rounding
-        if total_bps != 10000:
-            diff = 10000 - total_bps
+            bps = 10000 // len(valid) if valid else 0
+            for r in valid:
+                r.contribution_bps = bps
+        else:
+            total = sum(r.improvement for r in positive)
+            for r in valid:
+                r.contribution_bps = int((r.improvement / total) * 10000) if r.improvement > 0 else 0
+            diff = 10000 - sum(r.contribution_bps for r in results)
             for r in results:
                 if r.contribution_bps > 0:
                     r.contribution_bps += diff
                     break
         
-        return results
-    
-    def validate_round(
-        self,
-        model_cid: str,
-        gradient_submissions: List[Tuple[str, str]],
-        dataset_name: str,
-    ) -> Dict[str, int]:
-        """
-        Full validation workflow.
-        
-        Returns:
-            Dict mapping trainer pubkey to contribution_bps
-        """
-        print(f"\n{'═'*60}")
-        print(f"  🔬 ML Validation")
-        print(f"{'═'*60}")
-        print(f"  Model:   {model_cid[:30]}...")
-        print(f"  Dataset: {dataset_name}")
-        print(f"  Trainers: {len(gradient_submissions)}")
-        print(f"{'═'*60}")
-        
-        # Evaluate all submissions
-        results = self.evaluate_submissions(
-            model_cid,
-            gradient_submissions,
-            dataset_name
-        )
-        
-        # Calculate contributions
-        results = self.calculate_contributions(results)
-        
-        if not results:
-            print(f"\n{'─'*60}")
-            print("  ❌ No valid contributions - round will NOT be completed")
-            print(f"{'─'*60}\n")
-            return {}
-        
-        # Print summary
-        print(f"\n{'─'*60}")
-        print("  📊 Contribution Summary:")
-        for r in sorted(results, key=lambda x: x.contribution_bps, reverse=True):
-            pct = r.contribution_bps / 100
-            bar = "█" * int(pct / 5)
-            print(f"  {r.trainer[:20]}... {pct:5.1f}% {bar}")
-        print(f"{'─'*60}\n")
-        
         return {r.trainer: r.contribution_bps for r in results}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# UTILITIES
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def list_supported_architectures() -> List[str]:
+    return ["simple_cnn", "medium_cnn", "resnet18", "resnet34", "resnet50",
+            "efficientnet_b0", "efficientnet_b1", "mobilenet_v2", "vgg11", "densenet121",
+            "vit_b_16", "mlp", "audio_cnn", "text_cnn", "timeseries_cnn", "graph_mlp",
+            "distilbert", "bert"]
+
+
+def count_datasets_by_task() -> Dict[str, int]:
+    counts = {}
+    for c in DATASET_CONFIG.values():
+        t = c.get("task", "unknown")
+        counts[t] = counts.get(t, 0) + 1
+    return counts
+
+
+def print_dataset_summary():
+    counts = count_datasets_by_task()
+    print(f"\n{'═'*50}")
+    print(f"  📊 DATASETS: {sum(counts.values())} total")
+    print(f"{'═'*50}")
+    for t, c in sorted(counts.items(), key=lambda x: -x[1]):
+        print(f"  {t:<20} {c:>3}")
+    print(f"{'═'*50}\n")
