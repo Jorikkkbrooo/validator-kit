@@ -1,0 +1,1492 @@
+{
+  "address": "HvQ8c3BBCsibJpH74UDXbvqEidJymzFYyGjNjRn7MYwC",
+  "metadata": {
+    "name": "decloud",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Created with Anchor"
+  },
+  "instructions": [
+    {
+      "name": "cancel_round",
+      "discriminator": [
+        82,
+        70,
+        134,
+        54,
+        46,
+        96,
+        148,
+        8
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "round"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_trainer",
+      "discriminator": [
+        55,
+        24,
+        189,
+        180,
+        35,
+        249,
+        70,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "round"
+        },
+        {
+          "name": "gradient",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "trainer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_validator_post",
+      "discriminator": [
+        225,
+        54,
+        234,
+        114,
+        42,
+        249,
+        104,
+        199
+      ],
+      "accounts": [
+        {
+          "name": "round"
+        },
+        {
+          "name": "post_validation",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "claim_validator_pre",
+      "discriminator": [
+        28,
+        54,
+        225,
+        41,
+        59,
+        120,
+        89,
+        201
+      ],
+      "accounts": [
+        {
+          "name": "round"
+        },
+        {
+          "name": "pre_validation",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_round",
+      "discriminator": [
+        229,
+        218,
+        236,
+        169,
+        231,
+        80,
+        134,
+        112
+      ],
+      "accounts": [
+        {
+          "name": "round_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        },
+        {
+          "name": "model_cid",
+          "type": "string"
+        },
+        {
+          "name": "dataset",
+          "type": {
+            "defined": {
+              "name": "Dataset"
+            }
+          }
+        },
+        {
+          "name": "reward_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "finalize_round",
+      "discriminator": [
+        239,
+        160,
+        254,
+        11,
+        254,
+        144,
+        53,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "signer": true,
+          "relations": [
+            "round"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "force_finalize",
+      "discriminator": [
+        215,
+        116,
+        165,
+        101,
+        174,
+        80,
+        228,
+        5
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "anyone",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "round_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  111,
+                  117,
+                  110,
+                  100,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "postvalidate",
+      "discriminator": [
+        175,
+        191,
+        177,
+        236,
+        123,
+        174,
+        219,
+        124
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "gradient",
+          "writable": true
+        },
+        {
+          "name": "post_validation",
+          "writable": true
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        },
+        {
+          "name": "accuracy",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "prevalidate",
+      "discriminator": [
+        22,
+        157,
+        136,
+        129,
+        168,
+        136,
+        183,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "pre_validation",
+          "writable": true
+        },
+        {
+          "name": "validator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        },
+        {
+          "name": "accuracy",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "submit_gradient",
+      "discriminator": [
+        52,
+        174,
+        224,
+        247,
+        246,
+        136,
+        203,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "round",
+          "writable": true
+        },
+        {
+          "name": "gradient",
+          "writable": true
+        },
+        {
+          "name": "trainer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        },
+        {
+          "name": "gradient_cid",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_remainder",
+      "discriminator": [
+        181,
+        52,
+        73,
+        77,
+        95,
+        203,
+        97,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "round"
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "round"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "round_id",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Gradient",
+      "discriminator": [
+        173,
+        254,
+        210,
+        185,
+        231,
+        180,
+        152,
+        152
+      ]
+    },
+    {
+      "name": "PostValidation",
+      "discriminator": [
+        125,
+        230,
+        127,
+        163,
+        18,
+        214,
+        12,
+        100
+      ]
+    },
+    {
+      "name": "PreValidation",
+      "discriminator": [
+        145,
+        180,
+        236,
+        158,
+        228,
+        230,
+        229,
+        42
+      ]
+    },
+    {
+      "name": "Round",
+      "discriminator": [
+        87,
+        127,
+        165,
+        51,
+        73,
+        78,
+        116,
+        174
+      ]
+    },
+    {
+      "name": "RoundCounter",
+      "discriminator": [
+        244,
+        2,
+        165,
+        240,
+        168,
+        10,
+        1,
+        238
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "GradientSubmitted",
+      "discriminator": [
+        165,
+        33,
+        17,
+        57,
+        235,
+        165,
+        150,
+        201
+      ]
+    },
+    {
+      "name": "Postvalidated",
+      "discriminator": [
+        189,
+        201,
+        251,
+        120,
+        36,
+        69,
+        198,
+        209
+      ]
+    },
+    {
+      "name": "Prevalidated",
+      "discriminator": [
+        139,
+        133,
+        194,
+        202,
+        88,
+        229,
+        189,
+        30
+      ]
+    },
+    {
+      "name": "RoundCancelled",
+      "discriminator": [
+        238,
+        141,
+        105,
+        175,
+        182,
+        158,
+        15,
+        7
+      ]
+    },
+    {
+      "name": "RoundCreated",
+      "discriminator": [
+        16,
+        19,
+        68,
+        117,
+        87,
+        198,
+        7,
+        124
+      ]
+    },
+    {
+      "name": "RoundFinalized",
+      "discriminator": [
+        43,
+        187,
+        17,
+        193,
+        36,
+        241,
+        48,
+        82
+      ]
+    },
+    {
+      "name": "TrainerRewardClaimed",
+      "discriminator": [
+        21,
+        152,
+        206,
+        205,
+        60,
+        156,
+        85,
+        250
+      ]
+    },
+    {
+      "name": "ValidatorRewardClaimed",
+      "discriminator": [
+        178,
+        74,
+        55,
+        133,
+        68,
+        80,
+        223,
+        171
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidRoundId",
+      "msg": "Invalid round ID"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidCid",
+      "msg": "Invalid CID"
+    },
+    {
+      "code": 6002,
+      "name": "ZeroReward",
+      "msg": "Zero reward"
+    },
+    {
+      "code": 6003,
+      "name": "RoundNotActive",
+      "msg": "Round not active"
+    },
+    {
+      "code": 6004,
+      "name": "RoundHasParticipants",
+      "msg": "Round has participants"
+    },
+    {
+      "code": 6005,
+      "name": "NoPrevalidation",
+      "msg": "No prevalidation"
+    },
+    {
+      "code": 6006,
+      "name": "NoGradients",
+      "msg": "No gradients"
+    },
+    {
+      "code": 6007,
+      "name": "NoPostvalidation",
+      "msg": "No post-validation"
+    },
+    {
+      "code": 6008,
+      "name": "PrevalidationClosed",
+      "msg": "Prevalidation closed"
+    },
+    {
+      "code": 6009,
+      "name": "RoundNotFinalized",
+      "msg": "Round not finalized"
+    },
+    {
+      "code": 6010,
+      "name": "RewardAlreadyClaimed",
+      "msg": "Already claimed"
+    },
+    {
+      "code": 6011,
+      "name": "NotValidated",
+      "msg": "Not validated"
+    },
+    {
+      "code": 6012,
+      "name": "TooEarly",
+      "msg": "Too early"
+    }
+  ],
+  "types": [
+    {
+      "name": "Dataset",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Cifar10"
+          },
+          {
+            "name": "Cifar100"
+          },
+          {
+            "name": "Mnist"
+          },
+          {
+            "name": "FashionMnist"
+          },
+          {
+            "name": "Emnist"
+          },
+          {
+            "name": "Kmnist"
+          },
+          {
+            "name": "Food101"
+          },
+          {
+            "name": "Flowers102"
+          },
+          {
+            "name": "StanfordDogs"
+          },
+          {
+            "name": "StanfordCars"
+          },
+          {
+            "name": "OxfordPets"
+          },
+          {
+            "name": "CatsVsDogs"
+          },
+          {
+            "name": "Eurosat"
+          },
+          {
+            "name": "Svhn"
+          },
+          {
+            "name": "Caltech101"
+          },
+          {
+            "name": "Caltech256"
+          },
+          {
+            "name": "Imdb"
+          },
+          {
+            "name": "Sst2"
+          },
+          {
+            "name": "Sst5"
+          },
+          {
+            "name": "YelpReviews"
+          },
+          {
+            "name": "AmazonPolarity"
+          },
+          {
+            "name": "RottenTomatoes"
+          },
+          {
+            "name": "FinancialSentiment"
+          },
+          {
+            "name": "TweetSentiment"
+          },
+          {
+            "name": "AgNews"
+          },
+          {
+            "name": "Dbpedia"
+          },
+          {
+            "name": "YahooAnswers"
+          },
+          {
+            "name": "TwentyNewsgroups"
+          },
+          {
+            "name": "SmsSpam"
+          },
+          {
+            "name": "HateSpeech"
+          },
+          {
+            "name": "CivilComments"
+          },
+          {
+            "name": "Toxicity"
+          },
+          {
+            "name": "ClincIntent"
+          },
+          {
+            "name": "Banking77"
+          },
+          {
+            "name": "SnipsIntent"
+          },
+          {
+            "name": "Conll2003"
+          },
+          {
+            "name": "Wnut17"
+          },
+          {
+            "name": "Squad"
+          },
+          {
+            "name": "SquadV2"
+          },
+          {
+            "name": "TriviaQa"
+          },
+          {
+            "name": "BoolQ"
+          },
+          {
+            "name": "CommonsenseQa"
+          },
+          {
+            "name": "Stsb"
+          },
+          {
+            "name": "Mrpc"
+          },
+          {
+            "name": "Qqp"
+          },
+          {
+            "name": "Snli"
+          },
+          {
+            "name": "Mnli"
+          },
+          {
+            "name": "CnnDailymail"
+          },
+          {
+            "name": "Xsum"
+          },
+          {
+            "name": "Samsum"
+          },
+          {
+            "name": "SpeechCommands"
+          },
+          {
+            "name": "Librispeech"
+          },
+          {
+            "name": "CommonVoice"
+          },
+          {
+            "name": "Gtzan"
+          },
+          {
+            "name": "Esc50"
+          },
+          {
+            "name": "Urbansound8k"
+          },
+          {
+            "name": "Nsynth"
+          },
+          {
+            "name": "Ravdess"
+          },
+          {
+            "name": "CremaD"
+          },
+          {
+            "name": "Iemocap"
+          },
+          {
+            "name": "Iris"
+          },
+          {
+            "name": "Wine"
+          },
+          {
+            "name": "Diabetes"
+          },
+          {
+            "name": "BreastCancer"
+          },
+          {
+            "name": "CaliforniaHousing"
+          },
+          {
+            "name": "AdultIncome"
+          },
+          {
+            "name": "BankMarketing"
+          },
+          {
+            "name": "CreditDefault"
+          },
+          {
+            "name": "Titanic"
+          },
+          {
+            "name": "HeartDisease"
+          },
+          {
+            "name": "ChestXray"
+          },
+          {
+            "name": "SkinCancer"
+          },
+          {
+            "name": "DiabeticRetinopathy"
+          },
+          {
+            "name": "BrainTumor"
+          },
+          {
+            "name": "Malaria"
+          },
+          {
+            "name": "BloodCells"
+          },
+          {
+            "name": "CovidXray"
+          },
+          {
+            "name": "PubmedQa"
+          },
+          {
+            "name": "MedQa"
+          },
+          {
+            "name": "Electricity"
+          },
+          {
+            "name": "Weather"
+          },
+          {
+            "name": "StockPrices"
+          },
+          {
+            "name": "EcgHeartbeat"
+          },
+          {
+            "name": "CodeSearchNet"
+          },
+          {
+            "name": "Humaneval"
+          },
+          {
+            "name": "Mbpp"
+          },
+          {
+            "name": "Spider"
+          },
+          {
+            "name": "Cora"
+          },
+          {
+            "name": "Citeseer"
+          },
+          {
+            "name": "Qm9"
+          },
+          {
+            "name": "NslKdd"
+          },
+          {
+            "name": "CreditCardFraud"
+          },
+          {
+            "name": "Phishing"
+          },
+          {
+            "name": "Movielens1m"
+          },
+          {
+            "name": "Movielens100k"
+          },
+          {
+            "name": "Xnli"
+          },
+          {
+            "name": "AmazonReviewsMulti"
+          },
+          {
+            "name": "Sberquad"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Gradient",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "trainer",
+            "type": "pubkey"
+          },
+          {
+            "name": "cid",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "cid_len",
+            "type": "u8"
+          },
+          {
+            "name": "post_count",
+            "type": "u8"
+          },
+          {
+            "name": "post_accuracy_sum",
+            "type": "u64"
+          },
+          {
+            "name": "improvement",
+            "type": "u64"
+          },
+          {
+            "name": "reward_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "GradientSubmitted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "trainer",
+            "type": "pubkey"
+          },
+          {
+            "name": "gradient_cid",
+            "type": "string"
+          },
+          {
+            "name": "gradients_count",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PostValidation",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "trainer",
+            "type": "pubkey"
+          },
+          {
+            "name": "validator",
+            "type": "pubkey"
+          },
+          {
+            "name": "accuracy",
+            "type": "u32"
+          },
+          {
+            "name": "reward_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Postvalidated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "trainer",
+            "type": "pubkey"
+          },
+          {
+            "name": "validator",
+            "type": "pubkey"
+          },
+          {
+            "name": "accuracy",
+            "type": "u32"
+          },
+          {
+            "name": "post_count",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PreValidation",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "validator",
+            "type": "pubkey"
+          },
+          {
+            "name": "accuracy",
+            "type": "u32"
+          },
+          {
+            "name": "reward_claimed",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Prevalidated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "validator",
+            "type": "pubkey"
+          },
+          {
+            "name": "accuracy",
+            "type": "u32"
+          },
+          {
+            "name": "pre_count",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Round",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "model_cid",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          },
+          {
+            "name": "model_cid_len",
+            "type": "u8"
+          },
+          {
+            "name": "dataset",
+            "type": {
+              "defined": {
+                "name": "Dataset"
+              }
+            }
+          },
+          {
+            "name": "reward_amount",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "RoundStatus"
+              }
+            }
+          },
+          {
+            "name": "pre_count",
+            "type": "u8"
+          },
+          {
+            "name": "pre_accuracy_sum",
+            "type": "u64"
+          },
+          {
+            "name": "gradients_count",
+            "type": "u8"
+          },
+          {
+            "name": "total_validations",
+            "type": "u16"
+          },
+          {
+            "name": "total_improvement",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundCounter",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "count",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "dataset",
+            "type": {
+              "defined": {
+                "name": "Dataset"
+              }
+            }
+          },
+          {
+            "name": "reward_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundFinalized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RoundStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Active"
+          },
+          {
+            "name": "Finalized"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "TrainerRewardClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "trainer",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "improvement",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ValidatorRewardClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "round_id",
+            "type": "u64"
+          },
+          {
+            "name": "validator",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "validation_type",
+            "type": "string"
+          }
+        ]
+      }
+    }
+  ]
+}
