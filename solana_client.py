@@ -41,6 +41,7 @@ class RoundInfo:
     gradients_count: int
     total_validations: int
     total_improvement: int
+    consensus_accuracy: int
     bump: int
     vault_bump: int
 
@@ -169,7 +170,12 @@ class SolanaClient:
             [b"post", round_id.to_bytes(8, "little"), bytes(trainer), bytes(validator)],
             self.program_id
         )
-    
+    def get_validator_stake_pda(self, validator: Pubkey) -> Tuple[Pubkey, int]:
+        """Get validator stake PDA"""
+        return Pubkey.find_program_address(
+            [b"validator_stake", bytes(validator)],
+            self.program_id
+        )
     # ═══════════════════════════════════════════════════════════════
     # Read Operations
     # ═══════════════════════════════════════════════════════════════
@@ -263,6 +269,9 @@ class SolanaClient:
         # total_improvement: u64
         total_improvement = struct.unpack("<Q", data[offset:offset+8])[0]
         offset += 8
+
+        consensus_accuracy = struct.unpack("<Q", data[offset:offset+8])[0]
+        offset += 8
         
         # bump: u8
         bump = data[offset]
@@ -285,6 +294,7 @@ class SolanaClient:
             gradients_count=gradients_count,
             total_validations=total_validations,
             total_improvement=total_improvement,
+            consensus_accuracy=consensus_accuracy,
             bump=bump,
             vault_bump=vault_bump,
         )
@@ -509,6 +519,7 @@ class SolanaClient:
             raise ValueError("No keypair configured")
         
         round_pda, _ = self.get_round_pda(round_id)
+        validator_stake_pda, _ = self.get_validator_stake_pda(self.keypair.pubkey())
         pre_pda, _ = self.get_pre_validation_pda(round_id, self.keypair.pubkey())
         
         # Build instruction data
@@ -518,6 +529,7 @@ class SolanaClient:
         
         accounts = [
             AccountMeta(round_pda, is_signer=False, is_writable=True),
+            AccountMeta(validator_stake_pda, is_signer=False, is_writable=False),
             AccountMeta(pre_pda, is_signer=False, is_writable=True),
             AccountMeta(self.keypair.pubkey(), is_signer=True, is_writable=True),
             AccountMeta(SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
@@ -535,8 +547,10 @@ class SolanaClient:
             raise ValueError("No keypair configured")
         
         round_pda, _ = self.get_round_pda(round_id)
+        validator_stake_pda, _ = self.get_validator_stake_pda(self.keypair.pubkey())
         gradient_pda, _ = self.get_gradient_pda(round_id, trainer)
         post_pda, _ = self.get_post_validation_pda(round_id, trainer, self.keypair.pubkey())
+    
         
         data = self.DISCRIMINATORS["postvalidate"]
         data += struct.pack("<Q", round_id)
@@ -544,6 +558,7 @@ class SolanaClient:
         
         accounts = [
             AccountMeta(round_pda, is_signer=False, is_writable=True),
+            AccountMeta(validator_stake_pda, is_signer=False, is_writable=False),
             AccountMeta(gradient_pda, is_signer=False, is_writable=True),
             AccountMeta(post_pda, is_signer=False, is_writable=True),
             AccountMeta(self.keypair.pubkey(), is_signer=True, is_writable=True),
